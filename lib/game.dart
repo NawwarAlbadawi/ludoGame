@@ -8,7 +8,6 @@ import 'package:fludo/players/players_notifier.dart';
 import 'package:fludo/result/result.dart';
 import 'package:fludo/result/result_notifier.dart';
 import 'package:fludo/util/colors.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -16,6 +15,7 @@ import 'package:provider/provider.dart';
 import 'board/overlay_surface.dart';
 import 'dice/dice.dart';
 import 'dice/dice_base.dart';
+import 'game_state.dart';
 import 'minMax.dart';
 
 class FludoGame extends StatefulWidget {
@@ -32,18 +32,20 @@ class _FludoGameState extends State<FludoGame> with TickerProviderStateMixin {
   List<List<int>> _winnerPawnList = [];
   bool _provideFreeTurn = false;
   CollisionDetails _collisionDetails = CollisionDetails();
-  List<bool> isHumanPlayer = [true, false, false, false];
+  late List<bool> isHumanPlayer;
 
-  late int _stepCounter = 0,
+  int _stepCounter = 0,
       _diceOutput = 0,
+      changeTurn = 0,
       _currentTurn = 0,
-      _selectedPawnIndex,
+      _selectedPawnIndex = 0,
       _maxTrackIndex = 57,
       _straightSixesCounter = 0,
       _forwardStepAnimTimeInMillis = 250,
       _reverseStepAnimTimeInMillis = 60;
   late List<List<List<Rect>>> _playerTracks;
   late List<Rect> _safeSpots;
+  var isValid = false;
   List<List<MapEntry<int, Rect>>> _pawnCurrentStepInfo = []; //step index, rect
 
   late PlayersNotifier _playerPaintNotifier;
@@ -53,6 +55,7 @@ class _FludoGameState extends State<FludoGame> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    isHumanPlayer = [true, false, false, true];
 
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
         overlays: []); //full screen
@@ -143,7 +146,6 @@ class _FludoGameState extends State<FludoGame> with TickerProviderStateMixin {
                                   selectedHomeIndex: _currentTurn,
                                   clickOffset: (clickOffset) {
                                     if (isHumanPlayer[_currentTurn]) {
-                                      print('handle_click');
                                       _handleClick(clickOffset);
                                     }
                                   }),
@@ -196,10 +198,18 @@ class _FludoGameState extends State<FludoGame> with TickerProviderStateMixin {
                           ),
                           Consumer<DiceNotifier>(builder: (_, notifier, __) {
                             if (notifier.isRolled) {
+                              print(isHumanPlayer[_currentTurn]);
+                              print('object+${notifier.output}');
                               _highlightCurrentPlayer();
                               _diceOutput = notifier.output;
+
+                              print(_diceOutput);
                               if (_diceOutput == 6) _straightSixesCounter++;
-                              _checkDiceResultValidity();
+                              if (isHumanPlayer[_currentTurn]) {
+                                _checkDiceResultValidity();
+                              } else {
+                                _handleComputerAlgorithm();
+                              }
                             }
                             return SizedBox.expand(
                               child: CustomPaint(
@@ -216,10 +226,6 @@ class _FludoGameState extends State<FludoGame> with TickerProviderStateMixin {
         ),
       ),
     );
-  }
-
-  clickOffsetFunction(clickOffset) {
-    if (isHumanPlayer[_currentTurn]) _handleClick(clickOffset);
   }
 
   List<Widget> _buildPawnWidgets() {
@@ -339,39 +345,9 @@ class _FludoGameState extends State<FludoGame> with TickerProviderStateMixin {
       }
     }
   }
-  // void _handleClick(Offset clickOffset) {
-  //   if (isHumanPlayer[_currentTurn]) {
-  //     // Human player logic
-  //     if (!_diceHighlightAnimCont.isAnimating && _stepCounter == 0) {
-  //       for (int pawnIndex = 0; pawnIndex < 4; pawnIndex++) {
-  //         if (_pawnCurrentStepInfo[_currentTurn][pawnIndex]
-  //             .value
-  //             .contains(clickOffset)) {
-  //           _selectedPawnIndex = pawnIndex;
-  //           _movePawn(considerCurrentStep: true);
-  //           break;
-  //         }
-  //       }
-  //     }
-  //   }
-  //   // else {
-  //   //   // Computer player logic
-  //   //   if (!_diceHighlightAnimCont.isAnimating && _stepCounter == 0) {
-  //   //     Minimax minimax = Minimax();
-  //   //     _selectedPawnIndex = minimax.getBestMove(
-  //   //       _pawnCurrentStepInfo
-  //   //           .map((player) => player.map((entry) => entry.key).toList())
-  //   //           .toList(),
-  //   //       _currentTurn,
-  //   //       _diceOutput,
-  //   //     );
-  //   //     _movePawn(considerCurrentStep: true);
-  //   //   }
-  //   // }
-  // }
 
   _checkDiceResultValidity() {
-    var isValid = false;
+    isValid = false;
 
     for (var stepInfo in _pawnCurrentStepInfo[_currentTurn]) {
       if (_diceOutput == 6) {
@@ -392,11 +368,15 @@ class _FludoGameState extends State<FludoGame> with TickerProviderStateMixin {
         }
       }
     }
-
-    if (!isValid) _changeTurn();
+    if (isHumanPlayer[_currentTurn]) {
+      if (!isValid) _changeTurn();
+    }
   }
 
   _movePawn({bool considerCurrentStep = false}) {
+    if (!isHumanPlayer[_currentTurn]) {
+      print('MoveConputer+$_diceOutput');
+    }
     int playerIndex, pawnIndex, currentStepIndex;
 
     if (_collisionDetails.isReverse) {
@@ -411,13 +391,11 @@ class _FludoGameState extends State<FludoGame> with TickerProviderStateMixin {
       pawnIndex = _selectedPawnIndex;
       currentStepIndex = min(
           _pawnCurrentStepInfo[playerIndex][pawnIndex].key +
-              (considerCurrentStep
-                  ? 0
-                  : 1), //condition to avoid incrementing key for initial step
+              (considerCurrentStep ? 0 : 1),
           _maxTrackIndex);
     }
 
-    //update current step info in the [_pawnCurrentStepInfo] list
+    // Update current step info
     var currentStepInfo = MapEntry(currentStepIndex,
         _playerTracks[playerIndex][pawnIndex][currentStepIndex]);
     _pawnCurrentStepInfo[playerIndex][pawnIndex] = currentStepInfo;
@@ -426,7 +404,6 @@ class _FludoGameState extends State<FludoGame> with TickerProviderStateMixin {
 
     if (_collisionDetails.isReverse) {
       if (currentStepIndex > 0) {
-        //animate one step reverse
         _playerAnimList[_collisionDetails.targetPlayerIndex]
             [_collisionDetails.pawnIndex] = Tween(
                 begin: currentStepInfo.value.center,
@@ -439,11 +416,11 @@ class _FludoGameState extends State<FludoGame> with TickerProviderStateMixin {
         _playerAnimContList[playerIndex][pawnIndex].duration =
             Duration(milliseconds: _forwardStepAnimTimeInMillis);
         _collisionDetails.isReverse = false;
-        _provideFreeTurn = true; //free turn for collision
-        _changeTurn();
+        _provideFreeTurn = true;
+
+        _changeTurn(); // Change turn normally
       }
     } else if (_stepCounter != _diceOutput) {
-      //animate one step forward
       _playerAnimList[playerIndex][pawnIndex] = Tween(
               begin: currentStepInfo.value.center,
               end: _playerTracks[playerIndex][pawnIndex]
@@ -458,20 +435,16 @@ class _FludoGameState extends State<FludoGame> with TickerProviderStateMixin {
         _movePawn(considerCurrentStep: true);
       else {
         if (currentStepIndex == _maxTrackIndex) {
-          _winnerPawnList[_currentTurn]
-              .add(_selectedPawnIndex); //add pawn to [_winnerPawnList]
+          _winnerPawnList[_currentTurn].add(_selectedPawnIndex);
 
           if (_winnerPawnList[_currentTurn].length < 4)
-            _provideFreeTurn =
-                true; //if player has remaining pawns, provide free turn for reaching destination
+            _provideFreeTurn = true;
           else {
             _resultNotifier.rebuildPaint(_currentTurn);
-            _provideFreeTurn =
-                false; //to discard free turn if he completes the game
+            _provideFreeTurn = false;
           }
         }
-
-        _changeTurn();
+        _changeTurn(); // Change turn normally
       }
     }
   }
@@ -479,117 +452,118 @@ class _FludoGameState extends State<FludoGame> with TickerProviderStateMixin {
   bool _checkCollision(MapEntry<int, Rect> currentStepInfo) {
     var currentStepCenter = currentStepInfo.value.center;
 
-    if (currentStepInfo.key <
-        52) //no need to check if the pawn has entered destination lane
-    if (!_safeSpots.any((safeSpot) {
-      //avoid checking if it has landed on a safe spot
-      return safeSpot.contains(currentStepCenter);
-    })) {
-      List<CollisionDetails> collisions = [];
-      for (int playerIndex = 0;
-          playerIndex < _pawnCurrentStepInfo.length;
-          playerIndex++) {
-        for (int pawnIndex = 0;
-            pawnIndex < _pawnCurrentStepInfo[playerIndex].length;
-            pawnIndex++) {
-          if (playerIndex != _currentTurn ||
-              pawnIndex != _selectedPawnIndex) if (_pawnCurrentStepInfo[
-                  playerIndex][pawnIndex]
-              .value
-              .contains(currentStepCenter)) {
-            collisions.add(CollisionDetails()
-              ..pawnIndex = pawnIndex
-              ..targetPlayerIndex = playerIndex);
+    if (currentStepInfo.key < 52) {
+      if (!_safeSpots.any((safeSpot) {
+        return safeSpot.contains(currentStepCenter);
+      })) {
+        List<CollisionDetails> collisions = [];
+        for (int playerIndex = 0;
+            playerIndex < _pawnCurrentStepInfo.length;
+            playerIndex++) {
+          for (int pawnIndex = 0;
+              pawnIndex < _pawnCurrentStepInfo[playerIndex].length;
+              pawnIndex++) {
+            if (playerIndex != _currentTurn ||
+                pawnIndex != _selectedPawnIndex) {
+              if (_pawnCurrentStepInfo[playerIndex][pawnIndex]
+                  .value
+                  .contains(currentStepCenter)) {
+                collisions.add(CollisionDetails()
+                  ..pawnIndex = pawnIndex
+                  ..targetPlayerIndex = playerIndex);
+              }
+            }
           }
         }
-      }
 
-      /**
-       * Check if collision is valid
-       */
-      if (collisions.isEmpty ||
-          collisions.any((collision) {
-            return collision.targetPlayerIndex == _currentTurn;
-          }) ||
-          collisions.length >
-              1) //conditions to no collision and group collisions
-        _collisionDetails.isReverse = false;
-      else {
-        _collisionDetails = collisions.first;
-        _playerAnimContList[_collisionDetails.targetPlayerIndex]
-                [_collisionDetails.pawnIndex]
-            .duration = Duration(milliseconds: _reverseStepAnimTimeInMillis);
+        if (collisions.isEmpty ||
+            collisions.any((collision) {
+              return collision.targetPlayerIndex == _currentTurn;
+            }) ||
+            collisions.length > 1) {
+          _collisionDetails.isReverse = false;
+        } else {
+          _collisionDetails = collisions.first;
+          _playerAnimContList[_collisionDetails.targetPlayerIndex]
+                  [_collisionDetails.pawnIndex]
+              .duration = Duration(milliseconds: _reverseStepAnimTimeInMillis);
 
-        _collisionDetails.isReverse = true;
+          _collisionDetails.isReverse = true;
+        }
       }
     }
     return _collisionDetails.isReverse;
   }
 
-  void _changeTurn() {
-    // Check if the game is over (3 players have completed)
-    if (_winnerPawnList
-            .where((playerPawns) => playerPawns.length == 4)
-            .length !=
-        3) {
-      _highlightDice(); // Highlight the dice for the next turn
+  _changeTurn() {
+    if (_winnerPawnList.where((playerPawns) {
+          return playerPawns.length == 4;
+        }).length !=
+        3) //if any 3 players have completed
+    {
+      _highlightDice();
 
-      _stepCounter = 0; // Reset step counter for the next turn
-
+      _stepCounter = 0; //reset step counter for next turn
       if (!_provideFreeTurn) {
-        // Find the next player who hasn't won yet
         do {
-          _currentTurn = (_currentTurn + 1) % 4; // Move to the next player
-        } while (_winnerPawnList[_currentTurn].length ==
-            4); // Skip players who have already won
-
-        _straightSixesCounter = 0; // Reset the straight sixes counter
-      } else if (_diceOutput != 6) {
+          //to ignore winners
+          _currentTurn =
+              (_currentTurn + 1) % 4; //change turn after animation completes
+          if (_winnerPawnList[_currentTurn].length != 4)
+            break; //select player if he is not yet a winner
+        } while (true);
+        _straightSixesCounter = 0;
+      } else if (_diceOutput != 6)
         _straightSixesCounter =
-            0; // Reset the straight sixes counter if free turn is provided
-      }
+            0; //reset 6s counter if free turn is provided by other means
 
-      // Highlight the current player if the animation is not running
-      if (!_playerHighlightAnimCont.isAnimating) {
-        _highlightCurrentPlayer();
-      }
+      if (!_playerHighlightAnimCont.isAnimating) _highlightCurrentPlayer();
 
       if (!isHumanPlayer[_currentTurn]) {
         _handleComputerTurn();
       }
-
-      _provideFreeTurn = false; // Reset the free turn flag
+      _provideFreeTurn = false;
     }
   }
 
   void _handleComputerTurn() async {
-    // Simulate a dice roll for the computer player
-    _diceNotifier.rollDice();
-    _diceOutput = _diceNotifier.output;
+    await Future.delayed(Duration(seconds: 1));
 
-    // Use the Minimax algorithm to decide the best move
+    if (_diceHighlightAnimCont.isAnimating) {
+      _playerHighlightAnimCont.reset();
+      _diceHighlightAnimCont.reset();
+      await _diceNotifier.rollDice();
+    }
+    await Future.delayed(Duration(seconds: 2));
+  }
+
+  void _handleComputerAlgorithm() {
+    _checkDiceResultValidity();
+    int pawnIndex;
     Minimax minimax = Minimax();
-    _selectedPawnIndex = minimax.getBestMove(
-      _pawnCurrentStepInfo
-          .map((player) => player.map((entry) => entry.key).toList())
-          .toList(),
+    GameState currentState = GameState(_pawnCurrentStepInfo
+        .map((player) => player.map((entry) => entry.key).toList())
+        .toList());
+    pawnIndex = minimax.getBestMove(
+      currentState,
       _currentTurn,
       _diceOutput,
     );
 
-    // Handle invalid move
-    if (_selectedPawnIndex == -1) {
-      _changeTurn(); // No valid move, skip the turn
+    print(pawnIndex);
+
+    if (pawnIndex == -1) {
+      _checkDiceResultValidity();
+      if (!isValid) _changeTurn();
       return;
     }
 
-    // Move the selected pawn
-    _movePawn(considerCurrentStep: true);
-
-    // Provide an extra turn if the dice output is 6
-    if (_diceOutput == 6) {
-      _provideFreeTurn = true;
+    if (_diceOutput == 6 &&
+        _pawnCurrentStepInfo[_currentTurn][pawnIndex].key == 0) {
+      _diceOutput = 1;
     }
+    _selectedPawnIndex = pawnIndex;
+    _movePawn(considerCurrentStep: true);
   }
 
   _highlightCurrentPlayer() {
@@ -598,12 +572,5 @@ class _FludoGameState extends State<FludoGame> with TickerProviderStateMixin {
 
   _highlightDice() {
     _diceHighlightAnimCont.repeat();
-  }
-
-  @override
-  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
-    super.debugFillProperties(properties);
-    properties.add(DiagnosticsProperty<AnimationController>(
-        '_diceHighlightAnimCont', _diceHighlightAnimCont));
   }
 }
