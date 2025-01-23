@@ -143,7 +143,8 @@ class Minimax {
       if (state.isValidMove(playerIndex, pawnIndex, diceRoll)) {
         GameState newState =
             state.simulateMove(playerIndex, pawnIndex, diceRoll);
-        double score = _minimax(newState, depth - 1, false, playerIndex);
+        double score =
+            _minimax(newState, depth - 1, false, playerIndex, diceRoll);
         if (score > bestScore) {
           bestScore = score;
           bestMove = pawnIndex;
@@ -154,8 +155,8 @@ class Minimax {
     return bestMove;
   }
 
-  double _minimax(
-      GameState state, int depth, bool isMaximizing, int playerIndex) {
+  double _minimax(GameState state, int depth, bool isMaximizing,
+      int playerIndex, int diceRoll) {
     if (depth == 0 || state.isGameOver()) {
       return evaluateState(state, playerIndex);
     }
@@ -163,9 +164,11 @@ class Minimax {
     if (isMaximizing) {
       double maxEval = double.negativeInfinity;
       for (int pawnIndex = 0; pawnIndex < 4; pawnIndex++) {
-        if (state.isValidMove(playerIndex, pawnIndex, 6)) {
-          GameState newState = state.simulateMove(playerIndex, pawnIndex, 6);
-          double eval = _minimax(newState, depth - 1, false, playerIndex);
+        if (state.isValidMove(playerIndex, pawnIndex, diceRoll)) {
+          GameState newState =
+              state.simulateMove(playerIndex, pawnIndex, diceRoll);
+          double eval =
+              _minimax(newState, depth - 1, false, playerIndex, diceRoll);
           maxEval = max(maxEval, eval);
         }
       }
@@ -175,10 +178,11 @@ class Minimax {
       for (int opponentIndex = 0; opponentIndex < 4; opponentIndex++) {
         if (opponentIndex != playerIndex) {
           for (int pawnIndex = 0; pawnIndex < 4; pawnIndex++) {
-            if (state.isValidMove(opponentIndex, pawnIndex, 6)) {
+            if (state.isValidMove(opponentIndex, pawnIndex, diceRoll)) {
               GameState newState =
-                  state.simulateMove(opponentIndex, pawnIndex, 6);
-              double eval = _minimax(newState, depth - 1, true, playerIndex);
+                  state.simulateMove(opponentIndex, pawnIndex, diceRoll);
+              double eval =
+                  _minimax(newState, depth - 1, true, playerIndex, diceRoll);
               minEval = min(minEval, eval);
             }
           }
